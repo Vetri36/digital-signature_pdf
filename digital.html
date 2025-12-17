@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Digital Signature to PDF</title>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <style>
+    * { box-sizing: border-box; font-family: Arial, sans-serif; }
+    body { background: #f4f6f8; margin: 0; padding: 15px; }
+    h1 { text-align: center; }
+
+    .card {
+      background: #fff;
+      padding: 15px;
+      border-radius: 10px;
+      max-width: 420px;
+      margin: auto;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+    }
+
+    label { font-weight: bold; margin-top: 10px; display: block; }
+    input, select, button {
+      width: 100%; padding: 10px; margin-top: 6px;
+      border-radius: 6px; border: 1px solid #ccc; font-size: 16px;
+    }
+
+    button { background: #2563eb; color: white; border: none; cursor: pointer; }
+    button:disabled { background: #9ca3af; }
+
+    canvas, img, video {
+      width: 100%; border: 1px dashed #999; border-radius: 6px; margin-top: 10px;
+    }
+
+    .hidden { display: none; }
+
+    .step { display: none; margin-top: 10px; }
+    .step.active { display: block; }
+
+    .step-indicator {
+      display: flex; justify-content: space-between; margin-bottom: 10px;
+    }
+    .step-indicator div {
+      flex: 1; text-align: center; padding: 6px;
+      background: #e5e7eb; margin: 2px; border-radius: 6px;
+    }
+    .step-indicator .active { background: #2563eb; color: white; }
+  </style>
+</head>
+<body>
+
+<h1>Digital Signature to PDF</h1>
+
+<div class="card">
+
+  <div class="step-indicator">
+    <div id="i1" class="active">1. Source</div>
+    <div id="i2">2. Signature</div>
+    <div id="i3">3. PDF</div>
+  </div>
+
+  <!-- STEP 1 -->
+  <div class="step active" id="step1">
+    <label>Select Source</label>
+    <select id="source" onchange="changeSource()">
+      <option value="upload">Upload Image</option>
+      <option value="camera">Use Camera</option>
+      <option value="draw">Draw Signature</option>
+    </select>
+    <button onclick="nextStep()">Next</button>
+  </div>
+
+  <!-- STEP 2 -->
+  <div class="step" id="step2">
+
+    <div id="uploadSection">
+      <label>Upload Signature</label>
+      <input type="file" accept="image/*" onchange="loadImage(event)">
+    </div>
+
+    <div id="cameraSection" class="hidden">
+      <label>Camera</label>
+      <video id="video" autoplay></video>
+      <button onclick="capturePhoto()">Capture</button>
+    </div>
+
+    <div id="drawSection" class="hidden">
+      <label>Draw Signature</label>
+      <canvas id="signPad" height="200"></canvas>
+      <button onclick="clearPad()">Clear</button>
+    </div>
+
+    <img id="preview" class="hidden" />
+
+    <button onclick="nextStep()">Next</button>
+  </div>
+
+  <!-- STEP 3 -->
+  <div class="step" id="step3">
+    <label>PDF Width (mm)</label>
+    <input type="number" id="pdfW" placeholder="210">
+
+    <label>PDF Height (mm)</label>
+    <input type="number" id="pdfH" placeholder="297">
+
+    <label>PDF Quality (Approx File Size)</label>
+    <select id="sizeUnit">
+      <option value="KB">KB</option>
+      <option value="MB">MB</option>
+    </select>
+    <input type="range" id="quality" min="10" max="300" value="100">
+    <small id="qText">100 KB</small>
+
+    <button onclick="exportPDF()">Export PDF</button>
+  </div>
+
+</div>
+
+<script>
+// --------- GLOBAL REFERENCES ---------
+let currentStep = 1;
+
+const sourceSelect = document.getElementById('source');
+const uploadSection = document.getElementById('uploadSection');
+const cameraSection = document.getElementById('cameraSection');
+const drawSection = document.getElementById('drawSection');
+const preview = document.getElementById('preview');
+const video = document.getElementById('video');
+const canvas = document.getElementById('signPad');
+const ctx = canvas.getContext('2d');
+const quality = document.getElementById('quality');
+const sizeUnit = document.getElementById('sizeUnit');
+const qText = document.getElementById('qText');
+
+let drawing = false;
+
+// --------- STEP CONTROL ---------
+function nextStep() {
+  if (currentStep >= 3) return;
+  document.getElementById('step' + currentStep).classList.remove('active');
+  document.getElementById('i' + currentStep).classList.remove('active');
+  currentStep++;
+  document.getElementById('step' + currentStep).classList.add('active');
+  document.getElementById('i' + currentStep).classList.add('active');
+}
+
+// --------- SOURCE CHANGE (FIXED) ---------
+function changeSource() {
+  const s = sourceSelect.value;
+
+  uploadSection.classList.toggle('hidden', s !== 'upload');
+  cameraSection.classList.toggle('hidden', s !== 'camera');
+  drawSection.classList.toggle('hidden', s !== 'draw');
+
+  if (s === 'camera') {
+    navigator.mediaDevices.getUserMedia({ video: true })
+      .then(stream => video.srcObject = stream)
+      .catch(() => alert('Camera permission denied'));
+  }
+}
+
+// --------- IMAGE UPLOAD ---------
+function loadImage(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const r = new FileReader();
+  r.onload = () => {
+    preview.src = r.result;
+    preview.classList.remove('hidden');
+  };
+  r.readAsDataURL(file);
+}
+
+// --------- CAMERA CAPTURE ---------
+function capturePhoto() {
+  if (!video.videoWidth) return alert('Camera not ready');
+  const c = document.createElement('canvas');
+  c.width = video.videoWidth;
+  c.height = video.videoHeight;
+  c.getContext('2d').drawImage(video, 0, 0);
+  preview.src = c.toDataURL('image/jpeg', 0.7);
+  preview.classList.remove('hidden');
+}
+
+// --------- SIGNATURE DRAW ---------
+canvas.addEventListener('mousedown', e => {
+  drawing = true;
+  ctx.beginPath();
+  ctx.moveTo(e.offsetX, e.offsetY);
+});
+
+canvas.addEventListener('mouseup', () => drawing = false);
+canvas.addEventListener('mouseout', () => drawing = false);
+
+canvas.addEventListener('mousemove', e => {
+  if (!drawing) return;
+  ctx.lineWidth = 2;
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = '#000';
+  ctx.lineTo(e.offsetX, e.offsetY);
+  ctx.stroke();
+});
+
+function clearPad() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+}
+
+// --------- QUALITY DISPLAY ---------
+function updateQualityText() {
+  let value = quality.value;
+  if (sizeUnit.value === 'MB') {
+    qText.innerText = (value / 100).toFixed(2) + ' MB';
+  } else {
+    qText.innerText = value + ' KB';
+  }
+}
+
+quality.addEventListener('input', updateQualityText);
+sizeUnit.addEventListener('change', updateQualityText);
+
+// --------- PDF EXPORT ---------
+function exportPDF() {
+  const w = Number(document.getElementById('pdfW').value);
+  const h = Number(document.getElementById('pdfH').value);
+
+  if (!w || !h) {
+    alert('Please enter valid PDF size');
+    return;
+  }
+
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ unit: 'mm', format: [w, h] });
+
+  let imgData = preview.src;
+  if (!imgData && !canvas.toDataURL) {
+    alert('No signature found');
+    return;
+  }
+
+  if (!imgData) {
+    let compression = quality.value / 300;
+    if (sizeUnit.value === 'MB') compression = Math.min(0.95, compression * 1.5);
+    imgData = canvas.toDataURL('image/jpeg', compression);
+  }
+
+  pdf.addImage(imgData, 'JPEG', 10, 10, w - 20, h - 20);
+
+  // ---- FORCE DOWNLOAD (DESKTOP + MOBILE SAFE) ----
+  const filename = 'signature.pdf';
+
+  try {
+    // Standard download
+    pdf.save(filename);
+  } catch (e) {
+    // Fallback for some mobile browsers
+    const blob = pdf.output('blob');
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+}
+
+// --------- BASIC TESTS ---------
+console.assert(sourceSelect !== null, 'Source select missing');
+console.assert(uploadSection && cameraSection && drawSection, 'One or more sections missing');
+console.assert(typeof changeSource === 'function', 'changeSource not defined');
+</script>
+</body>
+</html>
